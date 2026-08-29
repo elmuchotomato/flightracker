@@ -1,4 +1,5 @@
-eap_data/
+eap_data/*
+!eap_data/session.json
 __pycache__/
 *.pyc
 .DS_Store
