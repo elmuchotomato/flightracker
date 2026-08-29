@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EAP RWY15 Departure Compliance</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { display: flex; flex-direction: column; height: 100vh; font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; overflow: hidden; }
+
+/* top bar */
+#topbar {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  padding: 7px 14px; background: #1e293b; border-bottom: 1px solid #334155;
+  flex-wrap: wrap;
+}
+#topbar h1 { font-size: 14px; font-weight: 600; color: #f1f5f9; white-space: nowrap; }
+.stat {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  font-weight: 600; white-space: nowrap;
+}
+.stat-total { background: #1e3a5f; color: #93c5fd; }
+.stat-ok    { background: #14532d; color: #86efac; }
+.stat-south { background: #7f1d1d; color: #fca5a5; }
+.stat-north { background: #7c2d12; color: #fdba74; }
+.spacer { flex: 1; }
+.btn {
+  padding: 4px 11px; border-radius: 5px; border: 1px solid #475569;
+  background: #334155; color: #cbd5e1; font-size: 12px; cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { background: #475569; }
+.btn.active { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+.time-input {
+  padding: 3px 6px; border-radius: 4px; border: 1px solid #475569;
+  background: #334155; color: #cbd5e1; font-size: 11px;
+  outline: none; width: 78px; color-scheme: dark;
+}
+.time-input:focus { border-color: #3b82f6; }
+.filter-label { font-size: 11px; color: #64748b; white-space: nowrap; }
+
+/* main layout */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* sidebar */
+#sidebar {
+  width: 345px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: #1e293b; border-right: 1px solid #334155; overflow: hidden;
+}
+#sb-head { padding: 9px 12px; border-bottom: 1px solid #334155; }
+#sb-airport { font-size: 13px; font-weight: 600; }
+#sb-exported { font-size: 10px; color: #64748b; margin-top: 2px; }
+#search-wrap { padding: 7px 10px; border-bottom: 1px solid #334155; }
+#search-wrap input {
+  width: 100%; padding: 4px 8px; border-radius: 4px;
+  border: 1px solid #475569; background: #0f172a; color: #e2e8f0; font-size: 12px;
+  outline: none;
+}
+#search-wrap input:focus { border-color: #3b82f6; }
+#flight-list { flex: 1; overflow-y: auto; }
+#flight-list::-webkit-scrollbar { width: 5px; }
+#flight-list::-webkit-scrollbar-track { background: #1e293b; }
+#flight-list::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+#no-data {
+  padding: 20px 14px; font-size: 12px; color: #64748b; line-height: 1.7;
+}
+.fi {
+  padding: 8px 12px; border-bottom: 1px solid #1e2d3d; cursor: pointer;
+  transition: background 0.1s;
+}
+.fi:hover { background: #263548; }
+.fi.sel { background: #1d3a5f; }
+.fi-cs { font-size: 13px; font-weight: 600; color: #f1f5f9; display: flex; align-items: center; gap: 5px; }
+.fi-meta { font-size: 10px; color: #64748b; margin-top: 3px; }
+.badge {
+  display: inline-block; padding: 1px 5px; border-radius: 3px;
+  font-size: 9px; font-weight: 700; text-transform: uppercase; flex-shrink: 0;
+}
+.badge-ok    { background: #14532d; color: #86efac; }
+.badge-south { background: #7f1d1d; color: #fca5a5; }
+.badge-north { background: #7c2d12; color: #fdba74; }
+.badge-none  { background: #1e293b; color: #64748b; border: 1px solid #334155; }
+
+/* sidebar tabs */
+#sb-tabs { display: flex; border-bottom: 1px solid #334155; flex-shrink: 0; }
+.sb-tab {
+  flex: 1; padding: 7px 0; font-size: 11px; font-weight: 600; text-align: center;
+  color: #64748b; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.sb-tab.active { color: #e2e8f0; border-bottom-color: #3b82f6; }
+
+/* rankings table */
+#ranking-panel { flex: 1; overflow-y: auto; display: none; }
+#ranking-panel table { width: 100%; border-collapse: collapse; font-size: 11px; }
+#ranking-panel th {
+  padding: 6px 8px; text-align: left; color: #64748b; font-weight: 600;
+  border-bottom: 1px solid #334155; position: sticky; top: 0; background: #1e293b;
+}
+#ranking-panel td { padding: 6px 8px; border-bottom: 1px solid #1e2d3d; color: #cbd5e1; }
+#ranking-panel tr:hover td { background: #263548; cursor: pointer; }
+#ranking-panel tr td:first-child { color: #64748b; }
+.dev-bar {
+  display: inline-block; height: 6px; border-radius: 3px;
+  background: #ef4444; vertical-align: middle; margin-right: 4px;
+}
+
+/* map */
+#map { flex: 1; }
+.leaflet-container { background: #1a2332; }
+
+/* legend */
+#legend {
+  position: absolute; bottom: 28px; right: 10px; z-index: 900;
+  background: rgba(15,23,42,0.88); border: 1px solid #334155;
+  border-radius: 6px; padding: 8px 12px; font-size: 11px;
+  pointer-events: none;
+}
+#legend div { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.leg-line { width: 22px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+
+/* drop overlay */
+#drop-overlay {
+  display: none; position: fixed; inset: 0; z-index: 9999;
+  background: rgba(30,41,59,0.88); align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 600; color: #93c5fd; pointer-events: none;
+}
+#drop-overlay.vis { display: flex; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>EAP RWY15 Compliance</h1>
+  <span class="stat stat-total" id="st-total">—</span>
+  <span class="stat stat-ok"    id="st-ok">—</span>
+  <span class="stat stat-south" id="st-south">—</span>
+  <span class="stat stat-north" id="st-north">—</span>
+  <div class="spacer"></div>
+  <div id="date-filter" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"></div>
+  <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+    <span class="filter-label">Time</span>
+    <input type="time" id="time-from" class="time-input" value="00:00">
+    <span class="filter-label">–</span>
+    <input type="time" id="time-to" class="time-input" value="23:59">
+    <button class="btn" id="btn-reset-time" title="Reset time filter" style="display:none">✕</button>
+  </div>
+  <button class="btn" id="btn-nondep">Non-dep off</button>
+  <button class="btn" id="btn-live" title="Toggle live updates — turn off to freeze the map for screenshots">Live</button>
+  <label class="btn" style="cursor:pointer">
+    Import JSON <input type="file" accept=".json" id="file-input" style="display:none">
+  </label>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="sb-head">
+      <div id="sb-airport">No data loaded</div>
+      <div id="sb-exported">Drop session.json onto the map or click Import</div>
+    </div>
+    <div id="sb-tabs">
+      <div class="sb-tab active" id="tab-flights">Flights</div>
+      <div class="sb-tab" id="tab-rankings">Rankings</div>
+    </div>
+    <div id="search-wrap">
+      <input type="text" id="search" placeholder="Search callsign…" disabled>
+    </div>
+    <div id="flight-list">
+      <div id="no-data">
+        Import a <strong>session.json</strong> from the poller, or enable <strong>Live</strong> mode
+        (needs <code>python3&nbsp;-m&nbsp;http.server&nbsp;8080</code> in the project folder).
+      </div>
+    </div>
+    <div id="ranking-panel">
+      <table>
+        <thead><tr><th>#</th><th>Flight</th><th>Airline</th><th>Type</th><th>Deviation</th></tr></thead>
+        <tbody id="ranking-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<div id="drop-overlay">Drop session.json here</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── map ───────────────────────────────────────────────────────────────────────
+const map = L.map('map', { preferCanvas: true }).setView([47.59, 7.53], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 18,
+}).addTo(map);
+
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => {
+  const d = document.createElement('div');
+  d.id = 'legend';
+  d.innerHTML = `
+    <div><div class="leg-line" style="background:#a855f7;opacity:0.7"></div> Corridor (RWY15 SID)</div>
+    <div><div class="leg-line" style="background:#22c55e"></div> On corridor</div>
+    <div><div class="leg-line" style="background:#ef4444"></div> South (Allschwil)</div>
+    <div><div class="leg-line" style="background:#f97316"></div> Off-axis north</div>
+    <div><div class="leg-line" style="background:#475569"></div> Non-departure</div>
+    <div><div class="leg-line" style="background:#f97316;opacity:0.5;border:1px dashed #f97316"></div> Allschwil 1.5 km</div>
+  `;
+  return d;
+};
+legend.addTo(map);
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let session     = null;
+let selectedHex = null;
+let showNonDep  = false;
+let liveTimer   = null;
+let flightLayers = {};   // hex → L.layerGroup
+const allGroup   = L.layerGroup().addTo(map);
+
+// ── filter state ──────────────────────────────────────────────────────────────
+let filterDates    = new Set(); // empty = all dates
+let filterTimeFrom = '00:00';
+let filterTimeTo   = '23:59';
+
+function flightDateStr(f) {
+  if (!f.track || !f.track.length) return null;
+  const d = new Date(f.track[0][0]);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function flightStartMinutes(f) {
+  if (!f.track || !f.track.length) return null;
+  const d = new Date(f.track[0][0]);
+  return d.getHours() * 60 + d.getMinutes();
+}
+function timeToMinutes(t) {
+  const [h, m] = (t || '00:00').split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+function isTimeFiltered() {
+  return filterTimeFrom !== '00:00' || filterTimeTo !== '23:59';
+}
+function filterFlights(flights) {
+  if (filterDates.size === 0 && !isTimeFiltered()) return flights;
+  const fromM = timeToMinutes(filterTimeFrom);
+  const toM   = timeToMinutes(filterTimeTo);
+  return flights.filter(f => {
+    if (filterDates.size > 0 && !filterDates.has(flightDateStr(f))) return false;
+    if (isTimeFiltered()) {
+      const sm = flightStartMinutes(f);
+      if (sm === null || sm < fromM || sm > toM) return false;
+    }
+    return true;
+  });
+}
+function rebuildDateFilter(allFlights) {
+  const dates = new Set();
+  allFlights.forEach(f => { const d = flightDateStr(f); if (d) dates.add(d); });
+  const sorted = [...dates].sort();
+  const container = document.getElementById('date-filter');
+  container.innerHTML = '';
+  if (sorted.length <= 1) return;
+
+  const makeBtn = (label, active, onClick) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (active ? ' active' : '');
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    container.appendChild(b);
+    return b;
+  };
+
+  makeBtn('All', filterDates.size === 0, () => {
+    filterDates.clear();
+    if (session) render(session, true);
+  });
+
+  sorted.forEach(date => {
+    const d = new Date(date + 'T12:00:00');
+    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    makeBtn(label, filterDates.has(date), () => {
+      if (filterDates.has(date)) filterDates.delete(date);
+      else filterDates.add(date);
+      if (session) render(session, true);
+    });
+  });
+}
+
+// ── airline lookup (ICAO 3-letter prefix) ────────────────────────────────────
+const AIRLINE = {
+  EZY:'easyJet', EJU:'easyJet', EJT:'easyJet',
+  RYR:'Ryanair', ENT:'Enter Air',
+  VLG:'Vueling', IBE:'Iberia', IBS:'Iberia Express',
+  AFR:'Air France', HOP:'HOP!',
+  DLH:'Lufthansa', CLH:'Lufthansa CityLine',
+  SWR:'Swiss', SWX:'Swiss',
+  AUA:'Austrian', TYR:'Tyrolean',
+  BEL:'Brussels Airlines', DAT:'TUI fly Belgium',
+  WZZ:'Wizz Air', W6:'Wizz Air',
+  TUI:'TUI', TOM:'TUI', XFU:'TUI Nordic',
+  LGL:'Luxair',
+  TAP:'TAP Air Portugal',
+  TSC:'Air Transat', TGO:'TUIfly',
+  UAL:'United Airlines', DAL:'Delta', AAL:'American',
+  BAW:'British Airways', SHT:'BA Shuttle',
+  KLM:'KLM', MPH:'Martinair',
+  MSC:'Air Cairo', LAV:'LÁVIDA',
+  THY:'Turkish Airlines', TK:'Turkish Airlines',
+  AZA:'ITA Airways', FCO:'Neos',
+  CFG:'Condor', BER:'Air Berlin',
+  GWI:'Germanwings', EW:'Eurowings', EWG:'Eurowings',
+  PGT:'Pegasus', SXS:'SunExpress',
+  FPO:'flypop', FDX:'FedEx', UPS:'UPS',
+  NJE:'NetJets', TAG:'TAG Aviation',
+};
+function airlineName(cs) {
+  if (!cs) return '—';
+  const pre = cs.replace(/[0-9]/g,'').substring(0,3).toUpperCase();
+  return AIRLINE[pre] || AIRLINE[cs.substring(0,2).toUpperCase()] || '—';
+}
+
+// ── geo helpers ───────────────────────────────────────────────────────────────
+const RE = 6371000;
+function bearing(a, b) {
+  const la1 = a[0]*Math.PI/180, la2 = b[0]*Math.PI/180, dlo = (b[1]-a[1])*Math.PI/180;
+  return Math.atan2(
+    Math.sin(dlo)*Math.cos(la2),
+    Math.cos(la1)*Math.sin(la2) - Math.sin(la1)*Math.cos(la2)*Math.cos(dlo)
+  );
+}
+function destPoint(pt, brng, dist) {
+  const d = dist/RE;
+  const la1 = pt[0]*Math.PI/180, lo1 = pt[1]*Math.PI/180;
+  const la2 = Math.asin(Math.sin(la1)*Math.cos(d) + Math.cos(la1)*Math.sin(d)*Math.cos(brng));
+  const lo2 = lo1 + Math.atan2(Math.sin(brng)*Math.sin(d)*Math.cos(la1), Math.cos(d)-Math.sin(la1)*Math.sin(la2));
+  return [la2*180/Math.PI, lo2*180/Math.PI];
+}
+function corridorPoly(axis, halfW) {
+  const L2 = [], R2 = [];
+  for (let i = 0; i < axis.length; i++) {
+    let b;
+    if (i === 0)               b = bearing(axis[0], axis[1]);
+    else if (i === axis.length-1) b = bearing(axis[i-1], axis[i]);
+    else {
+      const b1 = bearing(axis[i-1], axis[i]), b2 = bearing(axis[i], axis[i+1]);
+      b = Math.atan2((Math.sin(b1)+Math.sin(b2))/2, (Math.cos(b1)+Math.cos(b2))/2);
+    }
+    L2.push(destPoint(axis[i], b - Math.PI/2, halfW));
+    R2.push(destPoint(axis[i], b + Math.PI/2, halfW));
+  }
+  return [...L2, ...R2.reverse()];
+}
+
+// ── colors ────────────────────────────────────────────────────────────────────
+const COL = { ok: '#22c55e', south: '#ef4444', north: '#f97316', none: '#475569' };
+
+// ── track segmenting ──────────────────────────────────────────────────────────
+const GAP_MS = 120000; // break the line if two consecutive points are > 120 s apart
+
+// Returns [{status, points:[lat,lon]}] grouping same-status runs.
+// Breaks on time gaps (no shared endpoint) or status changes (shared endpoint).
+function runSegments(track) {
+  const segs = [];
+  if (track.length < 2) return segs;
+  let start = 0;
+  for (let i = 1; i < track.length; i++) {
+    const gap    = (track[i][0] - track[i-1][0]) > GAP_MS;
+    const change = track[i][4] !== track[start][4];
+    if (gap || change) {
+      const sliceEnd = gap ? i : i + 1; // gap: no shared endpoint; change: shared
+      const pts = track.slice(start, sliceEnd).map(p => [p[1], p[2]]);
+      if (pts.length >= 2) segs.push({ status: track[start][4], points: pts });
+      start = i;
+    }
+  }
+  const pts = track.slice(start).map(p => [p[1], p[2]]);
+  if (pts.length >= 2) segs.push({ status: track[start][4], points: pts });
+  return segs;
+}
+
+// Split a raw track into contiguous sub-tracks with no large time gaps.
+function gapSplit(track) {
+  const segs = [];
+  if (!track.length) return segs;
+  let cur = [track[0]];
+  for (let i = 1; i < track.length; i++) {
+    if (track[i][0] - track[i-1][0] > GAP_MS) {
+      if (cur.length >= 2) segs.push(cur);
+      cur = [track[i]];
+    } else {
+      cur.push(track[i]);
+    }
+  }
+  if (cur.length >= 2) segs.push(cur);
+  return segs;
+}
+
+// ── render ────────────────────────────────────────────────────────────────────
+function render(data, preserveView) {
+  session = data;
+  const prevCenter = map.getCenter(), prevZoom = map.getZoom();
+
+  allGroup.clearLayers();
+  flightLayers = {};
+
+  const { axis, rule, flights, airport, exported } = data;
+  rebuildDateFilter(flights);
+  const deps    = filterFlights(flights.filter(f => f.departure));
+  const nondeps = filterFlights(flights.filter(f => !f.departure));
+
+  // corridor polygon
+  L.polygon(corridorPoly(axis, rule.corridorWidth_m/2), {
+    color: '#a855f7', weight: 1.5, opacity: 0.7,
+    fillColor: '#a855f7', fillOpacity: 0.08,
+  }).bindTooltip(
+    `RWY15 departure corridor<br>Width: ${rule.corridorWidth_m} m · Evaluated below ${rule.evalBelow_ft} ft<br><em>Approximation of AIP SID procedure</em>`,
+    { sticky: true, direction: 'top' }
+  ).addTo(allGroup);
+
+  // axis centerline (dashed)
+  L.polyline(axis, { color: '#a855f7', weight: 1.5, opacity: 0.4, dashArray: '6 5' })
+    .addTo(allGroup);
+
+  // airport marker
+  L.circleMarker([47.5896, 7.5299], {
+    radius: 7, color: '#93c5fd', fillColor: '#1d4ed8', fillOpacity: 1, weight: 2,
+  }).bindTooltip('LFSB / EuroAirport Basel', { direction: 'top' }).addTo(allGroup);
+
+  // Allschwil — 1.5 km protection zone
+  L.circle([47.5519, 7.5328], {
+    radius: 1500, color: '#f97316', weight: 1.5, opacity: 0.8,
+    fillColor: '#f97316', fillOpacity: 0.07,
+    dashArray: '5 4',
+  }).bindTooltip('Allschwil · 1.5 km radius<br><em>corridor_dispersion overfly threshold</em>', { sticky: true, direction: 'top' })
+    .addTo(allGroup);
+  L.circleMarker([47.5519, 7.5328], {
+    radius: 4, color: '#f97316', fillColor: '#f97316', fillOpacity: 0.9, weight: 1.5,
+    interactive: false,
+  }).addTo(allGroup);
+
+  // draw flights: departures first, then non-dep (non-dep underneath)
+  if (showNonDep) nondeps.forEach(drawFlight);
+  deps.forEach(drawFlight);
+
+  updateStats(deps);
+  updateSidebar(airport, exported, deps);
+  if (activeTab === 'rankings') renderRankings();
+
+  if (preserveView) map.setView(prevCenter, prevZoom, { animate: false });
+}
+
+function fmtTrackTime(f) {
+  if (!f.track || !f.track.length) return '';
+  const d = new Date(f.track[0][0]);
+  const mon = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${mon} · ${time}`;
+}
+
+function drawFlight(f) {
+  const grp = L.layerGroup();
+  const track = f.track;
+
+  if (track.length < 2) { flightLayers[f.hex] = grp; grp.addTo(allGroup); return; }
+
+  const dt = fmtTrackTime(f);
+
+  if (!f.departure) {
+    const tip = `${f.callsign || f.hex}<br><span style="color:#94a3b8;font-size:10px">${dt}</span>`;
+    gapSplit(track).forEach(seg => {
+      L.polyline(seg.map(p => [p[1],p[2]]), { color: '#334155', weight: 1.2, opacity: 0.5 })
+        .bindTooltip(tip, { sticky: true })
+        .addTo(grp);
+    });
+  } else {
+    runSegments(track).forEach(seg => {
+      const tip = f.callsign +
+        (seg.status !== 'none' ? ` — ${seg.status}` : '') +
+        (seg.status === 'south' ? ` (${f.maxSouthOvershoot_m} m)` : '') +
+        `<br><span style="color:#94a3b8;font-size:10px">${dt}</span>`;
+      L.polyline(seg.points, { color: COL[seg.status], weight: 2.5, opacity: 0.9 })
+        .bindTooltip(tip, { sticky: true })
+        .addTo(grp);
+    });
+
+    // callsign label at last point
+    const last = track[track.length-1];
+    const bg = COL[f.result] || '#475569';
+    L.marker([last[1], last[2]], {
+      icon: L.divIcon({
+        html: `<div style="background:${bg};color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.5)">${f.callsign}</div>`,
+        className: '', iconAnchor: [0, 8],
+      }),
+      interactive: false,
+    }).addTo(grp);
+  }
+
+  flightLayers[f.hex] = grp;
+  grp.addTo(allGroup);
+}
+
+function updateStats(deps) {
+  const ok    = deps.filter(f => f.result === 'ok').length;
+  const south = deps.filter(f => f.result === 'south').length;
+  const north = deps.filter(f => f.result === 'north').length;
+  document.getElementById('st-total').textContent = deps.length + ' dep';
+  document.getElementById('st-ok').textContent    = ok + ' ok';
+  document.getElementById('st-south').textContent  = south + ' south';
+  document.getElementById('st-north').textContent  = north + ' north';
+}
+
+function updateSidebar(airport, exported, deps) {
+  document.getElementById('sb-airport').textContent  = airport;
+  document.getElementById('sb-exported').textContent = 'Exported: ' + exported;
+  document.getElementById('search').disabled = false;
+  renderList(deps);
+}
+
+function renderList(deps) {
+  const q = document.getElementById('search').value.toLowerCase();
+  const list = document.getElementById('flight-list');
+  list.innerHTML = '';
+
+  const filtered = [...deps].reverse().filter(f =>
+    !q || (f.callsign || f.hex).toLowerCase().includes(q)
+  );
+
+  if (!filtered.length) {
+    list.innerHTML = '<div id="no-data">No matching departures.</div>';
+    return;
+  }
+
+  filtered.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'fi' + (f.hex === selectedHex ? ' sel' : '');
+    div.dataset.hex = f.hex;
+
+    let meta = '';
+    if (f.result === 'south') meta += `↓ ${f.maxSouthOvershoot_m} m overshoot`;
+    if (f.minAlt_ft !== null) meta += (meta ? ' · ' : '') + `min ${f.minAlt_ft} ft`;
+
+    div.innerHTML =
+      `<div class="fi-cs"><span class="badge badge-${f.result}">${f.result}</span>${f.callsign || f.hex}</div>` +
+      `<div class="fi-meta">${meta || '&nbsp;'}</div>`;
+
+    div.addEventListener('click', () => focusFlight(f.hex));
+    list.appendChild(div);
+  });
+}
+
+function renderRankings() {
+  if (!session) return;
+  // true if the track hits 'ok' before it ever hits 'south'
+  const okBeforeSouth = f => {
+    for (const p of f.track) {
+      if (p[4] === 'ok')    return true;
+      if (p[4] === 'south') return false;
+    }
+    return false;
+  };
+  const deps = filterFlights(session.flights)
+    .filter(f => f.departure && f.maxSouthOvershoot_m > 0 && okBeforeSouth(f))
+    .sort((a, b) => b.maxSouthOvershoot_m - a.maxSouthOvershoot_m);
+  const body = document.getElementById('ranking-body');
+  if (!deps.length) {
+    body.innerHTML = '<tr><td colspan="5" style="color:#64748b;padding:16px 8px">No south overshoots recorded yet</td></tr>';
+    return;
+  }
+  const max = deps[0].maxSouthOvershoot_m || 1;
+  body.innerHTML = deps.map((f, i) => {
+    const barW = Math.round((f.maxSouthOvershoot_m / max) * 60);
+    const devCell = f.maxSouthOvershoot_m > 0
+      ? `<span class="dev-bar" style="width:${barW}px"></span>${f.maxSouthOvershoot_m} m`
+      : `<span style="color:#64748b">—</span>`;
+    return `<tr onclick="focusFlight('${f.hex}')">
+      <td>${i+1}</td>
+      <td><strong>${f.callsign || f.hex}</strong></td>
+      <td>${airlineName(f.callsign)}</td>
+      <td>${f.acType || '—'}</td>
+      <td><span class="badge badge-${f.result}" style="margin-right:4px">${f.result}</span>${devCell}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── tab switching ─────────────────────────────────────────────────────────────
+let activeTab = 'flights';
+document.getElementById('tab-flights').addEventListener('click', () => {
+  activeTab = 'flights';
+  document.getElementById('tab-flights').classList.add('active');
+  document.getElementById('tab-rankings').classList.remove('active');
+  document.getElementById('search-wrap').style.display = '';
+  document.getElementById('flight-list').style.display = '';
+  document.getElementById('ranking-panel').style.display = 'none';
+});
+document.getElementById('tab-rankings').addEventListener('click', () => {
+  activeTab = 'rankings';
+  document.getElementById('tab-rankings').classList.add('active');
+  document.getElementById('tab-flights').classList.remove('active');
+  document.getElementById('search-wrap').style.display = 'none';
+  document.getElementById('flight-list').style.display = 'none';
+  document.getElementById('ranking-panel').style.display = 'block';
+  renderRankings();
+});
+
+function focusFlight(hex) {
+  selectedHex = hex;
+  if (session) renderList(session.flights.filter(f => f.departure));
+
+  const f = session && session.flights.find(f => f.hex === hex);
+  if (!f || !f.track.length) return;
+
+  // zoom to track
+  const bounds = L.latLngBounds(f.track.map(p => [p[1], p[2]]));
+  map.fitBounds(bounds.pad(0.25));
+}
+
+// ── import ────────────────────────────────────────────────────────────────────
+function loadText(text) {
+  let data;
+  try { data = JSON.parse(text); } catch (e) { alert('Invalid JSON: ' + e.message); return; }
+  render(data, false);
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => loadText(ev.target.result);
+  r.readAsText(f);
+  e.target.value = '';
+});
+
+// drag & drop
+document.addEventListener('dragover', e => {
+  e.preventDefault();
+  document.getElementById('drop-overlay').classList.add('vis');
+});
+document.addEventListener('dragleave', e => {
+  if (!e.relatedTarget) document.getElementById('drop-overlay').classList.remove('vis');
+});
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  document.getElementById('drop-overlay').classList.remove('vis');
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => loadText(ev.target.result);
+  r.readAsText(f);
+});
+
+// search
+document.getElementById('search').addEventListener('input', () => {
+  if (session) renderList(filterFlights(session.flights.filter(f => f.departure)));
+});
+
+// time filter
+function updateResetBtn() {
+  document.getElementById('btn-reset-time').style.display = isTimeFiltered() ? '' : 'none';
+}
+document.getElementById('time-from').addEventListener('change', function () {
+  filterTimeFrom = this.value || '00:00';
+  updateResetBtn();
+  if (session) render(session, true);
+});
+document.getElementById('time-to').addEventListener('change', function () {
+  filterTimeTo = this.value || '23:59';
+  updateResetBtn();
+  if (session) render(session, true);
+});
+document.getElementById('btn-reset-time').addEventListener('click', () => {
+  filterTimeFrom = '00:00'; filterTimeTo = '23:59';
+  document.getElementById('time-from').value = '00:00';
+  document.getElementById('time-to').value   = '23:59';
+  updateResetBtn();
+  if (session) render(session, true);
+});
+
+// non-dep toggle
+document.getElementById('btn-nondep').addEventListener('click', function () {
+  showNonDep = !showNonDep;
+  this.textContent = showNonDep ? 'Non-dep on' : 'Non-dep off';
+  this.classList.toggle('active', showNonDep);
+  if (session) render(session, true);
+});
+
+// live toggle — off freezes the map, on resumes updates
+// Merge session + cumulative: cumulative has all finalized departures (no cap);
+// session adds any currently-active (not yet finalized) tracks missing from cumulative.
+function mergeData(sessionData, cumulativeData) {
+  const seen = new Set();
+  const allFlights = [];
+  for (const f of cumulativeData.flights) {
+    const key = f.hex + ':' + (f.track?.[0]?.[0] ?? 0);
+    seen.add(key);
+    allFlights.push(f);
+  }
+  for (const f of sessionData.flights) {
+    const key = f.hex + ':' + (f.track?.[0]?.[0] ?? 0);
+    if (!seen.has(key)) allFlights.push(f);
+  }
+  return { ...sessionData, flights: allFlights };
+}
+
+function liveLoad() {
+  const t = Date.now();
+  Promise.all([
+    fetch('./eap_data/session.json?t='    + t).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }),
+    fetch('./eap_data/cumulative.json?t=' + t).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([sess, cum]) => {
+    render(cum ? mergeData(sess, cum) : sess, session != null);
+  }).catch(e => console.warn('Live fetch failed:', e));
+}
+
+document.getElementById('btn-live').addEventListener('click', function () {
+  if (liveTimer) {
+    clearInterval(liveTimer); liveTimer = null;
+    this.classList.remove('active');
+    this.textContent = 'Live — click to resume';
+  } else {
+    this.classList.add('active');
+    this.textContent = 'Live ●';
+    liveLoad();
+    liveTimer = setInterval(liveLoad, 5000);
+  }
+});
+
+// auto-start live on load (works when served from the project root)
+(function () {
+  const btn = document.getElementById('btn-live');
+  btn.classList.add('active');
+  btn.textContent = 'Live ●';
+  liveLoad();
+  liveTimer = setInterval(liveLoad, 5000);
+})();
+</script>
+</body>
+</html>
